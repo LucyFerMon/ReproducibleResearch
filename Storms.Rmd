@@ -1,0 +1,152 @@
+---
+title: "Health and Economic burden of Storm events in the USA from 1950 to 2011"
+author: "Lucia Fernandez Montoya"
+date: "19 Oct 2014"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: readable
+    highlight: tango
+---
+
+# Synopsis
+
+Between 1950 and 2011, a total of `r sum(data$FATALITIES)` fatalities and  `r sum(data$PROPDMG)+sum(data$CROPDMG)`USD loses, due to damages in property and crops, were reported. During that period a total of `r length(data$MAG)` events of  `r length(unique(data$EVTYPE))` different types were recorded.
+
+In order to analyse the economic and health burden caused by storm events in the USA two methods were used, firstly, the number of injuries, fatalities, crop damage and property damage was aggregated by event type. The maximum of the impact magnitude for each impact type was calcuated and the reponsible event identified and presented in a table. Secondly, the 5 events that caused the severest consequences for each impact type ( injuries, fatalities, crop damage and property damage) were calculated and presented in a bar chart to compare between events. Tornadoes caused the greatest number of casualies and injuries while floods caused the greatest economic loses. Finally, a map showing the location of the tornadoes and floods that caused for than 5 fatalities and more than 100,000 USD of aggregated economic losses (property+crops) is shown. 
+
+
+# Data Processing
+##Adquisition, cleaning and filtering
+
+The data come from the NOAA Storm Database and have been dowloaded from the following [url](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) on the 19th of October, 2014. 
+
+```{r cache=TRUE}
+
+setwd("/Users/Lucia/Dropbox/Cursos/CourseraDataA/Reproducible Research/Storms")
+if(!file.exists("RawData")){
+        
+        dir.create("RawData")
+}
+filesource<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(filesource, destfile="./RawData/rawdata.csv.bz2", method="curl")
+data <- read.table("./RawData/rawdata.csv.bz2", sep=",", header=TRUE)
+```
+
+The packages required for the analysis have been downloaded and loaded in R.
+```{r echo=FALSE}
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(grid)
+```
+
+
+
+In order to evalute the consequences of the events in terms of crop and property damages, a transformation has been applied to the corresponding colums to convert all the values to the same units. In the raw data set,the colum PROPDMGEXP indicates de magnitud of the impact, where this ("PROPDMG") indicates "B" (billion), the value in Property Damage (PROPDMG) has been multiplied by a 10^9; where it indicates "M" (million), it has been multiplied by 10^6 and where it indicates "K" (thousand), by 1000.
+
+```{r cache=TRUE}
+data$CROPDMG[data$CROPDMGEXP=="B"]<-data$CROPDMG[data$CROPDMGEXP=="B"]*1000000000
+data$CROPDMG[data$CROPDMGEXP=="M"]<-data$CROPDMG[data$CROPDMGEXP=="M"]*1000000
+data$CROPDMG[data$CROPDMGEXP=="K"]<-data$CROPDMG[data$CROPDMGEXP=="K"]*1000
+
+data$PROPDMG[data$PROPDMGEXP=="B"]<-data$PROPDMG[data$PROPDMGEXP=="B"]*1000000000
+data$PROPDMG[data$PROPDMGEXP=="M"]<-data$PROPDMG[data$PROPDMGEXP=="M"]*1000000
+data$PROPDMG[data$PROPDMGEXP=="K"]<-data$PROPDMG[data$PROPDMGEXP=="K"]*1000
+```
+
+In order to identify which hazard causes more fatalities, injuries, crop damage and property damage, the data were reshaped in order to get aggregated  values by event type.
+
+```{r cache=TRUE}
+datamelt<-melt(data, id=c("EVTYPE"), measure.vars=c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG") )
+EventSum<-dcast(datamelt, EVTYPE~variable, sum, na.rm=TRUE)
+```
+
+##Data Analysis
+
+The event types that caused the greatest imapcts are identified by finding the maximun value in the colums that contain the number of fatalities, injuries, crop damage and property damag and then extracting the corresponding event type from the event type colum.  The results are presented in the a table in the results section. 
+
+```{r}
+events<-c(as.character(data$EVTYPE[data$FATALITIES==max(data$FATALITIES)]),
+as.character(data$EVTYPE[data$INJURIES==max(data$INJURIES)]),
+paste(as.character(data$EVTYPE[data$CROPDMG==max(data$CROPDMG)])[1], "&",as.character(data$EVTYPE[data$CROPDMG==max(data$CROPDMG)])[2] ),as.character(data$EVTYPE[data$PROPDMG==max(data$PROPDMG)]))
+damage<-c(paste("Fatalities", "(people)"), paste ("Injuries", "(people)"), paste("Crop", "(USD)"), paste("Property", "(USD)"))
+value<-c(max(data$FATALITIES), max(data$INJURIES),max(data$CROPDMG), max(data$PROPDMG))
+damages<-as.data.frame(cbind(damage, value, events))
+colnames(damages)<-c("Maximum damge in", "Damage value", "Cause")
+
+```
+
+
+In other to compare the impacts accross events, a ranking of events per impact caused (from the greatest to the lowest) for each impact type has been created. For this purpose, the event type colum has been ordered according to the descending magnitude in one of the impact types at a time (fatalities, injuries, crop or property damages). Only the first 5 events, those with the severest impacts, are shown. A bar plot with the resuls is shown in the results section. 
+
+```{r}
+severityInjuries<-EventSum[order(EventSum$INJURIES, decreasing=TRUE),][1:5,]
+severityFatalities<-EventSum[order(EventSum$FATALITIES,decreasing=TRUE),][1:5,]
+severityCropDamage<-EventSum[order(EventSum$CROPDMG, decreasing=TRUE),][1:5,]
+severityPropDamage<-EventSum[order(EventSum$PROPDMG, decreasing=TRUE),][1:5,]
+```
+
+
+#Results
+
+Table to summarize the severest impacts with the responsible event type. 
+```{r, results='asis'}
+library(xtable)
+table2<-xtable(damages, caption="Disaster that caused maximum damages and its value", label="damages", digits=4)
+print.xtable(table2, type="html", caption.placement="top")
+```
+
+The following two graphs show a bar plot of the health and economic consequences. The first graph shows the health consequences (casualities and injured people) per event type for the 5 most harmful events. The second graphs shows the economic consequences (crop and property damamges) for the 5 most harmful events. 
+
+
+```{r}
+library(ggplot2)
+injuries <- ggplot(data=severityInjuries, aes(x = EVTYPE, y = INJURIES, fill=(PROPDMG+CROPDMG)))+ geom_bar(stat = "identity")+ggtitle("Fatalities per event type")+ylab("Causualties (people)")
+fatalities <- ggplot(data=severityInjuries, aes(x = EVTYPE, y = FATALITIES, fill=(PROPDMG+CROPDMG)))+ geom_bar(stat = "identity")+ggtitle("Injuries per event type")+ylab("Injuries (people)")
+property<- ggplot(data=severityInjuries, aes(x = EVTYPE, y = PROPDMG, fill=(FATALITIES+INJURIES)))+ geom_bar(stat = "identity")+ggtitle("Property losses per event type")+ylab("Property Losses (USD)")
+crop <- ggplot(data=severityInjuries, aes(x = EVTYPE, y = CROPDMG, fill=(FATALITIES+INJURIES)))+ geom_bar(stat = "identity")+ggtitle("Crops losses per event type")+ylab("Crop Losses (USD)")
+```
+
+
+```{r, fig.align='center', fig.height=7}
+
+grid.arrange(fatalities, injuries, ncol=1, main="Health Impacts")
+###First Graph: Economic impacts
+grid.arrange(property, crop, ncol=1, main="Economic Impacts")
+```
+
+In order to formulate policies that protect the population from the adverse consequences of these events, besides knowing the magnitude of the impacts of each event type, it is important to know their geographic distribution. Understanding the distribution of these highly harmful events, will help identifying the most vulnerable areas. 
+For this purpose a map showing all the events that caused more than 5 fatalities and total economic loses (property damage + crop damage) of more than 100,000 USD is presented below for the two most harmful disasters: tornadoes and floods.
+
+```{r, fig.align='center', fig.height=7}
+
+library(ggmap)
+data$long<-data$LONGITUDE*(-1)/100
+data$lat<-data$LATITUDE/100
+data$totalloss<-data$PROPDMG+data$CROPDMG
+dataSub<-data[(data$EVTYPE=="TORNADO"|data$EVTYPE=="FLOOD"),]
+
+dataSub2<-dataSub[data$totalloss>100000 & data$FATALITIES>5,]
+dataSub2$EVTYPE<-as.factor(dataSub2$EVTYPE)
+map <- get_map(location = 'united states', zoom = 4)
+mapPoints <- ggmap(map)+geom_point(aes(x = long, y = lat, color=EVTYPE), size=4, data = dataSub2, alpha = .9)
+mapPoints
+```
+
+#Conclusion
+
+
+This analysis has shown that the events that caused the most fatalities are, by far,  tornadoes. The events with the most severe impacts on human injuries are also tornadoes, followed by excesive heat. Regarding economic loses, the events with the greatest damage, both on properties and crops, are floods. 
+
+The geographical distribution shows that the floods and tornadoes responsible of the greatest damages occured in the central part of the country and the eatern coast. While the western coast remained free of high impact disasters. 
+
+#Software archictecture for the analysis
+
+The present analysis has been conducted using R.
+
+```{r}
+sessionInfo()
+```
